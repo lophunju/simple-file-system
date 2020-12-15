@@ -1,7 +1,7 @@
-//
-// Simple FIle System
-// Student Name :
-// Student Number :
+// OS Homework (Simple File System)
+// Submission Year: 2020-2
+// Student Name: Park Juhun (박주훈)
+// Student Number: B511072
 //
 #include <stdio.h>
 #include <stdlib.h>
@@ -149,12 +149,159 @@ void sfs_touch(const char* path)
 
 void sfs_cd(const char* path)
 {
-	printf("Not Implemented\n");
+
+	// if path null
+	if (path == NULL){
+		sd_cwd.sfd_ino = 1;
+		sd_cwd.sfd_name[0] = '/';
+		sd_cwd.sfd_name[1] = '\0';
+		return;
+	}
+
+	// if path not null
+	// find cwd's inode
+	struct sfs_inode ci;
+	disk_read( &ci, sd_cwd.sfd_ino );
+
+	// cwd inode direct ptr loop
+	int i;
+	for (i=0; i<SFS_NDIRECT; i++){
+		// if direct ptr in use,
+		if (ci.sfi_direct[i]){
+			struct sfs_dir cdtrb[SFS_DENTRYPERBLOCK];
+			disk_read( cdtrb, ci.sfi_direct[i] );
+
+			// cwd directory entry loop
+			int j;
+			for (j=0; j<SFS_DENTRYPERBLOCK; j++){
+				// if directory entry in use, and path found
+				if ( (cdtrb[j].sfd_ino != SFS_NOINO) && (strcmp(cdtrb[j].sfd_name, path) == 0) ){
+					struct sfs_inode pathi;
+					disk_read( &pathi, cdtrb[j].sfd_ino );
+
+					// if directory
+					if (pathi.sfi_type == SFS_TYPE_DIR){
+						// change cwd
+						sd_cwd.sfd_ino = cdtrb[j].sfd_ino;
+						bzero(sd_cwd.sfd_name, SFS_NAMELEN);
+						strncpy(sd_cwd.sfd_name, cdtrb[j].sfd_name, SFS_NAMELEN);
+						return;
+					} else{	// if not a directory
+						error_message("cd", path, -2);
+						return;
+					}
+				}
+			}
+
+		}
+	}
+
+	// path not found
+	error_message("cd", path, -1);
+	return;
 }
 
 void sfs_ls(const char* path)
 {
-	printf("Not Implemented\n");
+
+	// find cwd's inode
+	struct sfs_inode ci;
+	disk_read( &ci, sd_cwd.sfd_ino );
+
+	// if path null
+	if (path == NULL){
+		// cwd inode direct ptr loop
+		int i;
+		for (i=0; i<SFS_NDIRECT; i++){
+			// if direct ptr in use,
+			if (ci.sfi_direct[i]){
+				struct sfs_dir cdtrb[SFS_DENTRYPERBLOCK];
+				disk_read( cdtrb, ci.sfi_direct[i] );
+
+				// cwd directory entry loop
+				int j;
+				for (j=0; j<SFS_DENTRYPERBLOCK; j++){
+					// if directory entry is use
+					if (cdtrb[j].sfd_ino != SFS_NOINO){
+						struct sfs_inode tempi;
+						disk_read( &tempi, cdtrb[j].sfd_ino );
+
+						// if directory
+						if (tempi.sfi_type == SFS_TYPE_DIR){
+							printf("%s/\t", cdtrb[j].sfd_name);
+						} else{	// if file
+							printf("%s\t", cdtrb[j].sfd_name);
+						}
+					}
+				}
+
+			}
+		}
+		printf("\n");
+		return;
+	}
+
+	// if path not null
+	// cwd inode direct ptr loop
+	int i;
+	for (i=0; i<SFS_NDIRECT; i++){
+		// if direct ptr in use,
+		if (ci.sfi_direct[i]){
+			struct sfs_dir cdtrb[SFS_DENTRYPERBLOCK];
+			disk_read( cdtrb, ci.sfi_direct[i] );
+
+			// cwd directory entry loop
+			int j;
+			for (j=0; j<SFS_DENTRYPERBLOCK; j++){
+				// if directory entry in use, and path found
+				if ( (cdtrb[j].sfd_ino != SFS_NOINO) && (strcmp(cdtrb[j].sfd_name, path) == 0) ){
+					struct sfs_inode pathi;
+					disk_read( &pathi, cdtrb[j].sfd_ino );
+
+					// if path is directory
+					if (pathi.sfi_type == SFS_TYPE_DIR){
+						// path inode direct ptr loop
+						int k;
+						for (k=0; k<SFS_NDIRECT; k++){
+							// if direct ptr in use,
+							if (pathi.sfi_direct[k]){
+								struct sfs_dir pdtrb[SFS_DENTRYPERBLOCK];
+								disk_read( pdtrb, pathi.sfi_direct[k] );
+
+								// path directory entry loop
+								int l;
+								for (l=0; l<SFS_DENTRYPERBLOCK; l++){
+									// if directory entry in use
+									if (pdtrb[l].sfd_ino != SFS_NOINO){
+										struct sfs_inode tempi;
+										disk_read( &tempi, pdtrb[l].sfd_ino );
+
+										// if directory
+										if (tempi.sfi_type == SFS_TYPE_DIR){
+											printf("%s/\t", pdtrb[l].sfd_name);
+										} else{	// if file
+											printf("%s\t", pdtrb[l].sfd_name);
+										}
+									}
+								}
+
+							}
+						}
+					} else { // if path is file
+						printf("%s", cdtrb[j].sfd_name);
+					}
+					printf("\n");
+					return;
+				}
+
+			}
+
+		}
+	}
+
+	// path not found
+	error_message("cd", path, -1);
+	return;
 }
 
 void sfs_mkdir(const char* org_path) 
