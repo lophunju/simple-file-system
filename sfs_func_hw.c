@@ -159,7 +159,7 @@ void sfs_cd(const char* path)
 	}
 
 	// if path not null
-	// find cwd's inode
+	// get cwd's inode
 	struct sfs_inode ci;
 	disk_read( &ci, sd_cwd.sfd_ino );
 
@@ -204,7 +204,7 @@ void sfs_cd(const char* path)
 void sfs_ls(const char* path)
 {
 
-	// find cwd's inode
+	// get cwd's inode
 	struct sfs_inode ci;
 	disk_read( &ci, sd_cwd.sfd_ino );
 
@@ -316,7 +316,80 @@ void sfs_rmdir(const char* org_path)
 
 void sfs_mv(const char* src_name, const char* dst_name) 
 {
-	printf("Not Implemented\n");
+
+	int srcfound=0, dstfound=0;
+
+	// get cwd's inode
+	struct sfs_inode ci;
+	struct sfs_dir *modified_block;
+	u_int32_t origin_block_no;
+	disk_read( &ci, sd_cwd.sfd_ino );
+
+	// check invalid
+	if (!strcmp(src_name, ".") || !strcmp(dst_name, ".") ){
+		error_message("mv", ".", -8);
+		return;
+	}
+	if ( !strcmp(src_name, "..") || !strcmp(dst_name, "..") ){
+		error_message("mv", "..", -8);
+		return;
+	}
+
+	// find src_name
+	// cwd inode direct ptr loop
+	int i;
+	struct sfs_dir *tmpdtre;
+	for (i=0; i<SFS_NDIRECT; i++){
+		if (srcfound && dstfound)	// for lower stress
+			break;
+
+		// if direct ptr in use,
+		if (ci.sfi_direct[i]){
+			struct sfs_dir cdtrb[SFS_DENTRYPERBLOCK];
+			disk_read( cdtrb, ci.sfi_direct[i] );
+
+			// cwd directory entry loop
+			int j;
+			for (j=0; j<SFS_DENTRYPERBLOCK; j++){
+				if (srcfound && dstfound)	// for lower stress
+					break;
+
+				// if directory entry in use
+				if (cdtrb[j].sfd_ino != SFS_NOINO){
+					// srcname found
+					if ( !srcfound && (strcmp(cdtrb[j].sfd_name, src_name) == 0) ){
+						srcfound = 1;
+						tmpdtre = &cdtrb[j];
+						modified_block = cdtrb;
+						origin_block_no = ci.sfi_direct[i];
+					}
+					// dstname found
+					if ( !dstfound && (strcmp(cdtrb[j].sfd_name, dst_name) == 0) ){
+						dstfound = 1;
+					}
+				}
+
+			}
+
+		}
+	}
+
+	if (!srcfound) {
+		error_message("mv", src_name, -1);
+		return;
+	}
+	if (dstfound) {
+		error_message("mv", dst_name, -6);
+		return;
+	}
+
+	// able to change the name
+	bzero(tmpdtre->sfd_name, SFS_NAMELEN);
+	strncpy(tmpdtre->sfd_name, dst_name, SFS_NAMELEN);
+
+	// write modified block on disk
+	disk_write(modified_block, origin_block_no);
+	return;
 }
 
 void sfs_rm(const char* path) 
