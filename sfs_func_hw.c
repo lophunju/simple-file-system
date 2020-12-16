@@ -42,12 +42,12 @@ void print_bitmap(){
 
 	int i;
 	for (i=0; i<bm_size; i++){
-		if (i%512 == 0){
-			printf("Bitmap Block %d ==============================\n", i/512);
+		if (i%SFS_BLOCKSIZE == 0){
+			printf("Bitmap Block %d ==============================\n", i/SFS_BLOCKSIZE);
 			printf("Byte index\tHexa\tBit(LSB-MSB)\n");
 		}
 
-		printf("\t%d\t%x\t", i%512, BITMAP[i]);
+		printf("\t%d\t%x\t", i%SFS_BLOCKSIZE, BITMAP[i]);
 
 		// convert to binary
 		int binary[8];
@@ -85,33 +85,57 @@ u_int32_t take_free_block(){
 					BIT_SET(BITMAP[token_num], i);	// mark as in use
 					// write bitmap back to disk
 					for (i=0; i<SFS_BITBLOCKS(spb.sp_nblocks); i++){
-						disk_write( &BITMAP[i*512], i+2);
+						disk_write( &BITMAP[i*SFS_BLOCKSIZE], i+2);
 					}
 					break;
 				}
 			}
-			if (bit_num == -1)
+			if (bit_num == -1){
+				puts("return here 1");
 				return 0;	// no more free block
+			}
 			break;
 		} else{	// in token_border (free block must here)
+			int bflag=0;
 			for (i=0; i<8; i++){
 				if (!BIT_CHECK(BITMAP[token_num], i)){
 					bit_num = i;
 					BIT_SET(BITMAP[token_num], i);	// mark as in use
 					// write bitmap back to disk
 					for (i=0; i<SFS_BITBLOCKS(spb.sp_nblocks); i++){
-						disk_write( &BITMAP[i*512], i+2);
+						disk_write( &BITMAP[i*SFS_BLOCKSIZE], i+2);
 					}
+					bflag = 1;
 					break;
 				}
 			}
-			break;
+			if (bflag)
+				break;
 		}
 	}
-	if (bit_num == -1)
+	if (bit_num == -1){
+		puts("return here 2");
 		return 0;	// no more free block
+	}
 
 	return (token_num * 8) + bit_num;	// free block number
+}
+
+void release_block(u_int32_t blockno){
+	/*
+		n in -> n/8 token, n%8 shift_nbit
+	*/
+
+	// convert
+	int token_num = blockno/8;
+	int shift_nbit = blockno%8;
+
+	BIT_CLEAR(BITMAP[token_num], shift_nbit);	// clear target bit
+
+	int i;
+	for (i=0; i<SFS_BITBLOCKS(spb.sp_nblocks); i++){
+		disk_write( &BITMAP[i*SFS_BLOCKSIZE], i+2);
+	}
 }
 
 void error_message(const char *message, const char *path, int error_code) {
@@ -246,7 +270,7 @@ void sfs_touch(const char* path)
 
 	// load bitmap
 	for (i=0; i<SFS_BITBLOCKS(spb.sp_nblocks); i++){
-		disk_read( &BITMAP[i*512], i+2);
+		disk_read( &BITMAP[i*SFS_BLOCKSIZE], i+2);
 	}
 
 
@@ -564,7 +588,111 @@ void sfs_mv(const char* src_name, const char* dst_name)
 
 void sfs_rm(const char* path) 
 {
-	printf("Not Implemented\n");
+	// get cwd's inode
+	struct sfs_inode ci;
+	disk_read( &ci, sd_cwd.sfd_ino );
+
+	//for consistency
+	assert( ci.sfi_type == SFS_TYPE_DIR );
+
+	// find path
+	// cwd inode direct ptr loop
+	int i;
+	for (i=0; i<SFS_NDIRECT; i++){
+		// if direct ptr in use,
+		if (ci.sfi_direct[i]){
+			struct sfs_dir cdtrb[SFS_DENTRYPERBLOCK];
+			disk_read( cdtrb, ci.sfi_direct[i] );
+
+			// cwd directory entry loop
+			int j;
+			for (j=0; j<SFS_DENTRYPERBLOCK; j++){
+				// if directory entry in use, and path found
+				if ( (cdtrb[j].sfd_ino != SFS_NOINO) && (strcmp(cdtrb[j].sfd_name, path) == 0) ){
+					struct sfs_inode pathi;
+					disk_read( &pathi, cdtrb[j].sfd_ino );
+
+					// if file
+					int tmpchinum;
+					if (pathi.sfi_type == SFS_TYPE_FILE){
+						// load bitmap
+						int k;
+						for (k=0; k<SFS_BITBLOCKS(spb.sp_nblocks); k++){
+							disk_read( &BITMAP[k*SFS_BLOCKSIZE], k+2);
+						}
+						
+						/* directory entry i-node number release */
+						tmpchinum = cdtrb[j].sfd_ino;
+						cdtrb[j].sfd_ino = SFS_NOINO;
+						disk_write(cdtrb, ci.sfi_direct[i]);
+						// puts("directory entry disk updated");
+
+						ci.sfi_size -= sizeof(struct sfs_dir);	// decrease parent size info
+						disk_write(&ci, sd_cwd.sfd_ino);
+						// puts("parent inode disk updated");
+
+						/* datablock pointed by direct_ptr release */
+						for (k=0; k<SFS_NDIRECT; k++){
+							if (pathi.sfi_direct[k]){
+								// clear the datablock
+								char tempdb[SFS_BLOCKSIZE];
+								disk_read(tempdb, pathi.sfi_direct[k]);
+								bzero(tempdb, SFS_BLOCKSIZE);
+								disk_write(tempdb, pathi.sfi_direct[k]);
+								// update bitmap
+								release_block(pathi.sfi_direct[k]);
+								// puts("datablock(dirptr) disk released");
+							}
+						}
+
+						/* indirect_ptr handle */
+						if (pathi.sfi_indirect){	// if in use
+							u_int32_t realblock[SFS_BLOCKSIZE/32];
+							disk_read(realblock, pathi.sfi_indirect);	// get real direct_ptrs' block
+
+							for (k=0; k<SFS_BLOCKSIZE/32; k++){
+								if (realblock[k]){
+									// clear the datablock
+									char tempdb[SFS_BLOCKSIZE];
+									disk_read(tempdb, realblock[k]);
+									bzero(tempdb, SFS_BLOCKSIZE);
+									disk_write(tempdb, realblock[k]);
+									// update bitmap
+									release_block(realblock[k]);
+									// puts("datablock(indirptr) disk released");
+								}
+							}
+
+							bzero(realblock, SFS_BLOCKSIZE);	// clear real block
+							disk_write(realblock, pathi.sfi_indirect);
+							release_block(pathi.sfi_indirect);	// update bitmap
+							// puts("realblock disk released");
+						}
+
+						/* release child(target file's) i-node */
+						bzero(&pathi, SFS_BLOCKSIZE);
+						disk_write( &pathi, tmpchinum );
+						release_block(tmpchinum);
+						// puts("child inode disk released");
+
+						// clear loaded bitmap
+						bzero(BITMAP, bm_size);
+
+						return;
+
+					} else{	// if not a file
+						error_message("rm", path, -10);
+						return;
+					}
+				}
+			}
+
+		}
+	}
+
+	// path not found
+	error_message("cd", path, -1);
+	return;
 }
 
 void sfs_cpin(const char* local_path, const char* path) 
