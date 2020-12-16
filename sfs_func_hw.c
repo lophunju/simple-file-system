@@ -33,42 +33,143 @@ static struct sfs_super spb;	// superblock
 static struct sfs_dir sd_cwd = { SFS_NOINO }; // current working directory
 
 /* Bitmap */
-static char *BITMAP;
-static int token_length;
-static int token_boundary;
-static int bit_boundary;
-// SFS_BITMAPSIZE(nblocks) -> 비트맵 몇비트인지 -> 32로나누면 몇개의 u_int32_t인지
-// SFS_BITBLOCKS(nblocks) -> 비트맵 몇블락인지 (몇개의 512바이트(SFS_BLOCKSIZE)인지)
+static u_int8_t *BITMAP;
+static int bm_size;
+static int token_border;
+static int bit_border;
 
-void make_bitmap(){
+// static int token_length;
+// static int token_boundary;
+// static int bit_boundary;
 
-	// allocate bitmap space
-	// token_length = (spb.sp_nblocks / 8) + 1;
-	token_length = (515 / 8) + 1;
-	BITMAP = (char*)malloc(sizeof(char) * token_length);
+void print_bitmap(){
 
-	// initialize
-	bzero(BITMAP, token_length);
-	// token_boundary = spb.sp_nblocks / 8;
-	// bit_boundary = spb.sp_nblocks % 8;
-	token_boundary = 515 / 8;
-	bit_boundary = 515 % 8;
+	int i;
+	for (i=0; i<bm_size; i++){
+		if (i%512 == 0){
+			printf("Bitmap Block %d ==============================\n", i/512);
+			printf("Byte index\tHexa\tBit(LSB-MSB)\n");
+		}
 
-	puts("bitmap made");
-	printf("size: %d bits\n", token_length * 8);
-	printf("number of 8bit token: %d\n", token_length);
-	printf("token_boundary: %d token fully usable\n", token_boundary);
-	printf("bit_boundary: %d bit usable after token_boundary\n", bit_boundary);
+		printf("\t%d\t%x\t", i%512, BITMAP[i]);
+
+		// convert to binary
+		int binary[8];
+		bzero(binary, sizeof(binary));
+		int temp = BITMAP[i];
+		int index = 0;
+		for(;;){
+			binary[index++] = temp % 2;
+			temp /= 2;
+			if (temp == 0) break;
+		}
+
+		// binary print
+		int j;
+		for (j=0; j<8; j++)
+			printf("%d", binary[j]);
+		printf("\n");
+
+	}
+
 }
 
-void remove_bitmap(){
-	token_length = 0;
-	token_boundary = 0;
-	bit_boundary = 0;
-	free(BITMAP);
+// void init_bitmap(){
 
-	puts("bitmap removed");
-}
+// 	BIT_SET(BITMAP[0], 7);	// super block
+// 	BIT_SET(BITMAP[0], 6);	// root directory i-node block
+	
+// 	// blocks used for bitmap
+// 	int bitmap_nblocks = SFS_BITBLOCKS(spb.sp_nblocks);
+// 	int tokeni=0;
+// 	int biti=5;
+// 	int i;
+// 	for (i=0; i<bitmap_nblocks; i++){
+// 		BIT_SET(BITMAP[tokeni], biti--);
+// 		if (biti < 0){
+// 			tokeni++;
+// 			biti = 7;
+// 		}
+// 	}
+
+// 	// blocks used by i-nodes, directories, files
+
+// 	//dfs
+// 	//start at root,
+// 	// check all direct_ptr
+// 	// if in use, mark that number on bitmap
+// 		// if directory, go into direcory block)
+// 			// check all directory_entry
+// 			// if in use, mark that number on bitmap
+// 				// go into that inode
+// 		// if file
+// 			// check indirect_ptr
+// 			// if in use, mark that number on bitmap
+// 			// get that direct block
+// 			// check all 128 entry
+// 			// recursive
+// 		// recursive
+// 	// check next direct_ptr until the end
+	
+
+// }
+
+// void make_bitmap(){
+// 	// manage 8 blocks per 1 token
+// 	// ex) 10241 blocks -> 1280 token + 1 token (1 first bit usable)
+// 	// 64 tokens manage 512 blocks
+// 	// 512 token per 1 bitmap block
+
+// 	//SFS_BITMAPSIZE(nblocks) 비트맵이 총몇비트? -> 8로 나눈후 +1 하면 총 몇개의 토큰 필요한지 확인 가능
+// 	//SFS_BITBLOCKS(nblocks) 비트맵이 총 몇블락? (한블락당 4096비트 = 한블락당 512개토큰 필요)
+
+// 	// allocate bitmap space
+	
+// 	bzero(BITMAP, bm_size);
+	
+
+// 	// token_length = (spb.sp_nblocks / 8) + 1;
+// 	// BITMAP = (u_int32_t*)malloc(sizeof(u_int32_t) * token_length);
+
+// 	// bzero(BITMAP, token_length);
+// 	// token_boundary = spb.sp_nblocks / 8;
+// 	// bit_boundary = spb.sp_nblocks % 8;
+
+// 	// init_bitmap();
+// 	// print_bitmap();
+
+// 	// size check
+// 	// puts("bitmap made");
+// 	// printf("size: %d bits\n", token_length * 8);
+// 	// printf("number of 8bit token: %d\n", token_length);
+// 	// printf("token_boundary: %d token fully usable\n", token_boundary);
+// 	// printf("bit_boundary: %d bit usable after token_boundary\n", bit_boundary);
+// }
+
+// void remove_bitmap(){
+// 	bzero(BITMAP, bm_size);
+// 	// token_length = 0;
+// 	// token_boundary = 0;
+// 	// bit_boundary = 0;
+// 	// free(BITMAP);
+// 	// puts("bitmap removed");
+// }
+
+// u_int32_t find_free_block(){
+	
+// 	int i;
+// 	for (i=0; i<token_length; i++){
+// 		if (BITMAP[i] == 255)
+// 			continue;
+
+// 		if (i == token_boundary){	// crossed the token_boundary
+// 			// careful bit check with bit_boundary
+// 		} else{	// in token_boundary
+// 			// bit check
+
+// 		}
+// 	}
+// }
 
 void error_message(const char *message, const char *path, int error_code) {
 	switch (error_code) {
@@ -126,7 +227,10 @@ void sfs_mount(const char* path)
 	sd_cwd.sfd_name[0] = '/';
 	sd_cwd.sfd_name[1] = '\0';
 
-	make_bitmap();
+	bm_size = sizeof(u_int8_t) * SFS_BLOCKSIZE * SFS_BITBLOCKS(spb.sp_nblocks);	// set bitmap size
+	BITMAP = (u_int8_t*)malloc(bm_size);	// allocate bitmap loading space
+	token_border = (SFS_BITMAPSIZE(spb.sp_nblocks) / 8) + 1;
+	bit_border = SFS_BITMAPSIZE(spb.sp_nblocks) % 8;
 }
 
 void sfs_umount() {
@@ -139,58 +243,152 @@ void sfs_umount() {
 		bzero(&spb, sizeof(struct sfs_super));
 		sd_cwd.sfd_ino = SFS_NOINO;
 
-		remove_bitmap();
+		//remove bitmap loading space
+		bm_size = 0;
+		token_border = 0;
+		bit_border = 0;
+		free(BITMAP);
 	}
 }
 
 void sfs_touch(const char* path)
 {
-	//skeleton implementation
 
-	struct sfs_inode si;
-	disk_read( &si, sd_cwd.sfd_ino );
+	//errors
+	// path already exists -6
+	// directory entry full -3
+	// no more blocks for i-node -4
+
+	int empty_dtre_found=0;
+
+	struct sfs_dir *modified_drtblock;
+	struct sfs_inode *new_iblock;
+	u_int32_t origin_drtblock_no;
+	u_int32_t free_block_no;
+
+	struct sfs_inode ci;
+	disk_read( &ci, sd_cwd.sfd_ino );
 
 	//for consistency
-	assert( si.sfi_type == SFS_TYPE_DIR );
+	assert( ci.sfi_type == SFS_TYPE_DIR );
 
-	//we assume that cwd is the root directory and root directory is empty which has . and .. only
-	//unused DISK2.img satisfy these assumption
-	//for new directory entry(for new file), we use cwd.sfi_direct[0] and offset 2
-	//becasue cwd.sfi_directory[0] is already allocated, by .(offset 0) and ..(offset 1)
-	//for new inode, we use block 6 
-	// block 0: superblock,	block 1:root, 	block 2:bitmap 
-	// block 3:bitmap,  	block 4:bitmap 	block 5:root.sfi_direct[0] 	block 6:unused
-	//
-	//if used DISK2.img is used, result is not defined
+
+	// find path
+	// if path exists
+		// -6 error
+	// else path not exists
+	// -> allocate sequence
+
+	// newfile inode sequence
+	// new inode struct
+	// set zero
+	// set size, type
+	// find first free block -> if not found, -4 error
+	// write into disk
+	// bitmap setting
+
+	// cwd directory entry sequence
+	// double loop -> find first empty directory entry -> if not found, -3 error
+	// set entry and write into disk (write new directory block into disk if needed)
+	// bitmap setting if needed (new direct pointer used, so new directory block used)
+
+	// cwd inode sequence
+	// modify size (sizeof(directory entry) up
+	// direct pointer setting if needed
+	// write into disk
+
 	
-	//buffer for disk read
-	struct sfs_dir sd[SFS_DENTRYPERBLOCK];
 
-	//block access
-	disk_read( sd, si.sfi_direct[0] );
+	// check if the path already exists
+	// cwd inode direct ptr loop
+	int i;
+	struct sfs_dir *tempdrte;
+	for (i=0; i<SFS_NDIRECT; i++){
+		// if direct ptr in use,
+		if (ci.sfi_direct[i]){
+			struct sfs_dir cdtrb[SFS_DENTRYPERBLOCK];
+			disk_read( cdtrb, ci.sfi_direct[i] );
 
-	//allocate new block
-	int newbie_ino = 6;
+			// cwd directory entry loop
+			int j;
+			for (j=0; j<SFS_DENTRYPERBLOCK; j++){
+				if (!empty_dtre_found && (cdtrb[j].sfd_ino == SFS_NOINO)){	// fisrt empty directory entry found
+					empty_dtre_found = 1;
+					tempdrte = &cdtrb[j];
+					modified_drtblock = cdtrb;
+					origin_drtblock_no = ci.sfi_direct[i];
+				}
 
-	sd[2].sfd_ino = newbie_ino;
-	strncpy( sd[2].sfd_name, path, SFS_NAMELEN );
+				// if directory entry in use, and path already exists
+				if ( (cdtrb[j].sfd_ino != SFS_NOINO) && (strcmp(cdtrb[j].sfd_name, path) == 0) ){
+					error_message("touch", path, -6);
+					return;
+				}
+			}
 
-	disk_write( sd, si.sfi_direct[0] );
+		}
+	}
 
-	si.sfi_size += sizeof(struct sfs_dir);
-	disk_write( &si, sd_cwd.sfd_ino );
+	// path not exists
+	struct sfs_inode new_inode;
+	bzero(&new_inode,SFS_BLOCKSIZE); // initalize sfi_direct[] and sfi_indirect
+	new_inode.sfi_size = 0;
+	new_inode.sfi_type = SFS_TYPE_FILE;
 
-	struct sfs_inode newbie;
+	// load bitmap
+	for (i=0; i<SFS_BITBLOCKS(spb.sp_nblocks); i++){
+		disk_read( &BITMAP[i*512], i+2);
+	}
 
-	bzero(&newbie,SFS_BLOCKSIZE); // initalize sfi_direct[] and sfi_indirect
-	newbie.sfi_size = 0;
-	newbie.sfi_type = SFS_TYPE_FILE;
+	print_bitmap();
 
-	disk_write( &newbie, newbie_ino );
+
+
+	// //we assume that cwd is the root directory and root directory is empty which has . and .. only
+	// //unused DISK2.img satisfy these assumption
+	// //for new directory entry(for new file), we use cwd.sfi_direct[0] and offset 2
+	// //becasue cwd.sfi_directory[0] is already allocated, by .(offset 0) and ..(offset 1)
+	// //for new inode, we use block 6 
+	// // block 0: superblock,	block 1:root, 	block 2:bitmap 
+	// // block 3:bitmap,  	block 4:bitmap 	block 5:root.sfi_direct[0] 	block 6:unused
+	// //
+	// //if used DISK2.img is used, result is not defined
+	
+	// //buffer for disk read
+	// struct sfs_dir sd[SFS_DENTRYPERBLOCK];
+
+	// //block access
+	// disk_read( sd, ci.sfi_direct[0] );
+
+	// //allocate new block
+	// int newbie_ino = 6;
+
+	// sd[2].sfd_ino = newbie_ino;
+	// strncpy( sd[2].sfd_name, path, SFS_NAMELEN );
+
+	// disk_write( sd, ci.sfi_direct[0] );
+
+	// ci.sfi_size += sizeof(struct sfs_dir);
+	// disk_write( &ci, sd_cwd.sfd_ino );
+
+	// struct sfs_inode newbie;
+
+	// bzero(&newbie,SFS_BLOCKSIZE); // initalize sfi_direct[] and sfi_indirect
+	// newbie.sfi_size = 0;
+	// newbie.sfi_type = SFS_TYPE_FILE;
+
+	// disk_write( &newbie, newbie_ino );
 }
 
 void sfs_cd(const char* path)
 {
+
+	// get cwd's inode
+	struct sfs_inode ci;
+	disk_read( &ci, sd_cwd.sfd_ino );
+
+	//for consistency
+	assert( ci.sfi_type == SFS_TYPE_DIR );
 
 	// if path null
 	if (path == NULL){
@@ -201,10 +399,6 @@ void sfs_cd(const char* path)
 	}
 
 	// if path not null
-	// get cwd's inode
-	struct sfs_inode ci;
-	disk_read( &ci, sd_cwd.sfd_ino );
-
 	// cwd inode direct ptr loop
 	int i;
 	for (i=0; i<SFS_NDIRECT; i++){
@@ -249,6 +443,9 @@ void sfs_ls(const char* path)
 	// get cwd's inode
 	struct sfs_inode ci;
 	disk_read( &ci, sd_cwd.sfd_ino );
+
+	//for consistency
+	assert( ci.sfi_type == SFS_TYPE_DIR );
 
 	// if path null
 	if (path == NULL){
@@ -361,11 +558,15 @@ void sfs_mv(const char* src_name, const char* dst_name)
 
 	int srcfound=0, dstfound=0;
 
+	struct sfs_dir *modified_drtblock;
+	u_int32_t origin_drtblock_no;
+
 	// get cwd's inode
 	struct sfs_inode ci;
-	struct sfs_dir *modified_block;
-	u_int32_t origin_block_no;
 	disk_read( &ci, sd_cwd.sfd_ino );
+
+	//for consistency
+	assert( ci.sfi_type == SFS_TYPE_DIR );
 
 	// check invalid
 	if (!strcmp(src_name, ".") || !strcmp(dst_name, ".") ){
@@ -402,8 +603,8 @@ void sfs_mv(const char* src_name, const char* dst_name)
 					if ( !srcfound && (strcmp(cdtrb[j].sfd_name, src_name) == 0) ){
 						srcfound = 1;
 						tmpdtre = &cdtrb[j];
-						modified_block = cdtrb;
-						origin_block_no = ci.sfi_direct[i];
+						modified_drtblock = cdtrb;
+						origin_drtblock_no = ci.sfi_direct[i];
 					}
 					// dstname found
 					if ( !dstfound && (strcmp(cdtrb[j].sfd_name, dst_name) == 0) ){
@@ -430,7 +631,7 @@ void sfs_mv(const char* src_name, const char* dst_name)
 	strncpy(tmpdtre->sfd_name, dst_name, SFS_NAMELEN);
 
 	// write modified block on disk
-	disk_write(modified_block, origin_block_no);
+	disk_write(modified_drtblock, origin_drtblock_no);
 	return;
 }
 
