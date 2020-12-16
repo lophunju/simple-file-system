@@ -32,6 +32,44 @@ void dump_directory();
 static struct sfs_super spb;	// superblock
 static struct sfs_dir sd_cwd = { SFS_NOINO }; // current working directory
 
+/* Bitmap */
+static char *BITMAP;
+static int token_length;
+static int token_boundary;
+static int bit_boundary;
+// SFS_BITMAPSIZE(nblocks) -> 비트맵 몇비트인지 -> 32로나누면 몇개의 u_int32_t인지
+// SFS_BITBLOCKS(nblocks) -> 비트맵 몇블락인지 (몇개의 512바이트(SFS_BLOCKSIZE)인지)
+
+void make_bitmap(){
+
+	// allocate bitmap space
+	// token_length = (spb.sp_nblocks / 8) + 1;
+	token_length = (515 / 8) + 1;
+	BITMAP = (char*)malloc(sizeof(char) * token_length);
+
+	// initialize
+	bzero(BITMAP, token_length);
+	// token_boundary = spb.sp_nblocks / 8;
+	// bit_boundary = spb.sp_nblocks % 8;
+	token_boundary = 515 / 8;
+	bit_boundary = 515 % 8;
+
+	puts("bitmap made");
+	printf("size: %d bits\n", token_length * 8);
+	printf("number of 8bit token: %d\n", token_length);
+	printf("token_boundary: %d token fully usable\n", token_boundary);
+	printf("bit_boundary: %d bit usable after token_boundary\n", bit_boundary);
+}
+
+void remove_bitmap(){
+	token_length = 0;
+	token_boundary = 0;
+	bit_boundary = 0;
+	free(BITMAP);
+
+	puts("bitmap removed");
+}
+
 void error_message(const char *message, const char *path, int error_code) {
 	switch (error_code) {
 	case -1:
@@ -87,6 +125,8 @@ void sfs_mount(const char* path)
 	sd_cwd.sfd_ino = 1;		//init at root
 	sd_cwd.sfd_name[0] = '/';
 	sd_cwd.sfd_name[1] = '\0';
+
+	make_bitmap();
 }
 
 void sfs_umount() {
@@ -98,6 +138,8 @@ void sfs_umount() {
 		printf("%s, unmounted\n", spb.sp_volname);
 		bzero(&spb, sizeof(struct sfs_super));
 		sd_cwd.sfd_ino = SFS_NOINO;
+
+		remove_bitmap();
 	}
 }
 
