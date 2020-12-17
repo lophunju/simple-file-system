@@ -297,7 +297,6 @@ void sfs_touch(const char* path)
 
 
 	/* for directory block (current or new) */
-
 	if(!empty_dtre_found){
 		// new direct ptr -> new directory block allocate
 		struct sfs_dir new_dtrb[SFS_DENTRYPERBLOCK];
@@ -501,32 +500,6 @@ void sfs_ls(const char* path)
 void sfs_mkdir(const char* org_path) 
 {
 
-	// errors
-	// path already exists -6, directory full -3, no more free blocks -4
-
-	// directory entry 추가시마다 inode sfi_size 증가 (부모)
-	// 생성된 directory entry가 가르키는 child inode에 direct_ptr한개 및 directory block 할당
-	//	+ ., .. directroy entry 할당하고 child inode에 사이즈 설정, 타입설정
-	// 나머지 모든 child directory entry SFS_NOINO 초기화
-
-	
-	// find path
-	// if path already exists -> -6 error
-	// else (path not exists)
-		// if empty parent directory entry
-			// 1. set parent directory entry, writeback, 
-			//   parent inode size up (1 entry up), new dir_ptr if needed, writeback
-			// 2. child i-node sequence
-				// 2-1. find free block -> fail: -4 error
-				// 2-2. set child inode size(2 entry), type, dir_ptr, write into new block
-			// 3. child directory entry sequence
-				// 3-1. find free block -> fail: -4 error
-				// 3-2. set directory entry (., ..)
-				// 3-3. set other entry SFS_NOINO, write into new block
-	
-	// directory full (if not returned before this line) -> -3 error
-
-
 	int empty_dtre_found=0;
 	int empty_direct_ptr=0;
 
@@ -672,7 +645,115 @@ void sfs_mkdir(const char* org_path)
 
 void sfs_rmdir(const char* org_path) 
 {
-	printf("Not Implemented\n");
+	// get cwd's inode
+	struct sfs_inode ci;
+	disk_read( &ci, sd_cwd.sfd_ino );
+
+	//for consistency
+	assert( ci.sfi_type == SFS_TYPE_DIR );
+
+	// check invalid
+	if (!strcmp(org_path, ".")){
+		error_message("rmdir", ".", -8);
+		return;
+	}
+
+	// find path
+	// cwd inode direct ptr loop
+	int i;
+	for (i=0; i<SFS_NDIRECT; i++){
+		// if direct ptr in use,
+		if (ci.sfi_direct[i]){
+			struct sfs_dir cdtrb[SFS_DENTRYPERBLOCK];
+			disk_read( cdtrb, ci.sfi_direct[i] );
+
+			// cwd directory entry loop
+			int j;
+			for (j=0; j<SFS_DENTRYPERBLOCK; j++){
+				// if directory entry in use, and path found
+				if ( (cdtrb[j].sfd_ino != SFS_NOINO) && (strcmp(cdtrb[j].sfd_name, org_path) == 0) ){
+					struct sfs_inode pathi;
+					disk_read( &pathi, cdtrb[j].sfd_ino );
+
+					// if directory
+					if (pathi.sfi_type == SFS_TYPE_DIR){
+
+						// check if directory not empty
+						// child inode direct ptr loop
+						int k;
+						for (k=0; k<SFS_NDIRECT; k++){
+							if (pathi.sfi_direct[k]){
+								struct sfs_dir chdtrb[SFS_DENTRYPERBLOCK];
+								disk_read( chdtrb, pathi.sfi_direct[k]);
+
+								// child directory entry loop
+								int l;
+								for (l=0; l<SFS_DENTRYPERBLOCK; l++){
+									if (chdtrb[l].sfd_ino != SFS_NOINO){
+										if ( (strcmp(chdtrb[l].sfd_name, ".") != 0) && (strcmp(chdtrb[l].sfd_name, "..") != 0) ){
+											error_message("rmdir", org_path, -7);
+											return;
+										}
+									}
+								}
+							}
+						}
+
+						/* directory empty */
+
+						// clear loaded bitmap
+						bzero(BITMAP, bm_size);
+						// load bitmap
+						for (k=0; k<SFS_BITBLOCKS(spb.sp_nblocks); k++){
+							disk_read( &BITMAP[k*SFS_BLOCKSIZE], k+2);
+						}
+
+						/* directory entry i-node number release */
+						int tmpchinum = cdtrb[j].sfd_ino;
+						cdtrb[j].sfd_ino = SFS_NOINO;
+						disk_write(cdtrb, ci.sfi_direct[i]);
+						// puts("directory entry disk updated");
+
+						ci.sfi_size -= sizeof(struct sfs_dir);	// decrease parent size info
+						disk_write(&ci, sd_cwd.sfd_ino);
+						// puts("parent inode disk updated");
+
+						/* directory block pointed by direct_ptr release */
+						for (k=0; k<SFS_NDIRECT; k++){
+							if (pathi.sfi_direct[k]){
+								// clear the datablock
+								char tempdtrb[SFS_BLOCKSIZE];
+								disk_read(tempdtrb, pathi.sfi_direct[k]);
+								bzero(tempdtrb, SFS_BLOCKSIZE);
+								disk_write(tempdtrb, pathi.sfi_direct[k]);
+								// update bitmap
+								release_block(pathi.sfi_direct[k]);
+								// puts("datablock(dirptr) disk released");
+							}
+						}
+
+						/* release child(target directory's) i-node */
+						bzero(&pathi, SFS_BLOCKSIZE);
+						disk_write( &pathi, tmpchinum );
+						release_block(tmpchinum);
+						// puts("child inode disk released");
+
+						return;
+
+					} else{	// if not a directory
+						error_message("rmdir", org_path, -2);
+						return;
+					}
+				}
+			}
+
+		}
+	}
+
+	// path not found
+	error_message("rmdir", org_path, -1);
+	return;
+
 }
 
 void sfs_mv(const char* src_name, const char* dst_name) 
