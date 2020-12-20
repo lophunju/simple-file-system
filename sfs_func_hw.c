@@ -947,6 +947,7 @@ void sfs_mkdir(const char* org_path)
 	if(!empty_dtre_found){
 		// new direct ptr -> new directory block allocate
 		struct sfs_dir new_dtrb[SFS_DENTRYPERBLOCK];
+		bzero(new_dtrb, SFS_BLOCKSIZE);	// marking
 		int i;
 		for(i=0; i<SFS_DENTRYPERBLOCK; i++){
 			new_dtrb[i].sfd_ino = SFS_NOINO;
@@ -1282,6 +1283,226 @@ void sfs_rm(const char* path)
 	return;
 }
 
+// void sfs_cpin(const char* local_path, const char* path) 
+// {
+// 	//errors
+// 	// path file not found on host(host find) -> -12
+// 	// local_path already exists on sfs(local find) -> -6
+// 	// directory full -> -3, no more free blocks -> -4
+// 	// input file size exceeds the max file size(사전계산정의값) -> -11
+// 	// 가능한 부분까지 복사하다 부족하면 no more free blocks -> -4 이거 그대로 로직연결하면 됨
+
+// 	int tempfd;
+
+// 	// host path check
+// 	tempfd = open(path, O_RDWR);
+// 	if (tempfd < 0){
+// 		error_message("cpin", path, -12);
+// 		return;
+// 	}
+
+// 	// total filesize check
+// 	filesize = lseek(tempfd, 0, SEEK_END);
+// 	if (filesize > SFS_BLOCKSIZE * 143){
+// 		error_message("cpin", "", -11);
+// 		return;
+// 	}
+
+// 	close(tempfd);
+
+
+
+// 	int empty_dtre_found=0;
+// 	int empty_direct_ptr=0;
+
+// 	struct sfs_dir *modified_drtblock;
+// 	u_int32_t origin_drtblock_no;
+// 	u_int32_t fbn;
+
+// 	struct sfs_inode ci;
+// 	disk_read( &ci, sd_cwd.sfd_ino );
+
+// 	//for consistency
+// 	assert( ci.sfi_type == SFS_TYPE_DIR );
+
+
+
+// 	// check if the local path already exists
+// 	// cwd inode direct ptr loop
+// 	int i;
+// 	struct sfs_dir *tempdrte;
+// 	for (i=0; i<SFS_NDIRECT; i++){
+// 		// if direct ptr in use,
+// 		if (ci.sfi_direct[i]){
+// 			struct sfs_dir cdtrb[SFS_DENTRYPERBLOCK];
+// 			disk_read( cdtrb, ci.sfi_direct[i] );
+
+// 			// cwd directory entry loop
+// 			int j;
+// 			for (j=0; j<SFS_DENTRYPERBLOCK; j++){
+// 				if (!empty_dtre_found && (cdtrb[j].sfd_ino == SFS_NOINO)){	// fisrt empty directory entry found
+// 					empty_dtre_found = 1;
+// 					tempdrte = &cdtrb[j];
+// 					modified_drtblock = cdtrb;
+// 					origin_drtblock_no = ci.sfi_direct[i];
+// 				}
+
+// 				// if directory entry in use, and local_path already exists
+// 				if ( (cdtrb[j].sfd_ino != SFS_NOINO) && (strcmp(cdtrb[j].sfd_name, local_path) == 0) ){
+// 					error_message("cpin", local_path, -6);
+// 					return;
+// 				}
+// 			}
+// 			if (empty_dtre_found)
+// 				break;
+
+// 		} else {
+// 			empty_direct_ptr = i;
+// 			break;
+// 		}
+// 	}
+
+
+// 	if(!empty_dtre_found && !empty_direct_ptr){	// directory full
+// 		error_message("cpin", path, -3);
+// 		return;
+// 	}
+
+
+
+// 	// clear loaded bitmap
+// 	bzero(BITMAP, bm_size);
+// 	// load bitmap
+// 	for (i=0; i<SFS_BITBLOCKS(spb.sp_nblocks); i++){
+// 		disk_read( &BITMAP[i*SFS_BLOCKSIZE], i+2);
+// 	}
+
+
+
+// 	// find free block, child datablock write and make
+// 	// child i-node direct/inderect ptr set
+// 	// child i-node size up;
+
+
+// 	/* for new file i-node*/
+
+// 	// path not exists
+// 	struct sfs_inode new_inode;
+// 	bzero(&new_inode,SFS_BLOCKSIZE); // initalize sfi_direct[] and sfi_indirect
+// 	new_inode.sfi_size = 0;
+// 	new_inode.sfi_type = SFS_TYPE_FILE;
+
+// 	fbn = take_free_block();	// find first free block, get free block number, and mark the bitmap
+// 	if (!fbn){	// no more free block
+// 		error_message("cpin", local_path, -4);
+// 		return;
+// 	}
+// 	u_int32_t cifbn = fbn;
+
+
+// 	/* for directory block (current or new) */
+// 	if(!empty_dtre_found){
+// 		// new direct ptr -> new directory block allocate
+// 		struct sfs_dir new_dtrb[SFS_DENTRYPERBLOCK];
+// 		bzero(new_dtrb, SFS_BLOCKSIZE);
+// 		int i;
+// 		for(i=0; i<SFS_DENTRYPERBLOCK; i++){
+// 			new_dtrb[i].sfd_ino = SFS_NOINO;
+// 		}
+
+// 		fbn = take_free_block();
+// 		if (!fbn){	// no more free block
+// 			error_message("cpin", local_path, -4);
+// 			return;
+// 		}
+
+// 		new_dtrb[0].sfd_ino = cifbn;
+// 		bzero(new_dtrb[0].sfd_name, SFS_NAMELEN);
+// 		strncpy(new_dtrb[0].sfd_name, local_path, SFS_NAMELEN);
+// 		disk_write(new_dtrb, fbn);
+
+// 		ci.sfi_direct[empty_direct_ptr] = fbn;	// parent direct ptr update (for new directory block)
+// 	} else{	// found empty directory entry
+// 		tempdrte->sfd_ino = cifbn;
+// 		bzero(tempdrte->sfd_name, SFS_NAMELEN);
+// 		strncpy(tempdrte->sfd_name, local_path, SFS_NAMELEN);
+// 		disk_write(modified_drtblock, origin_drtblock_no);
+// 	}
+
+// 	/* for parent i-node */
+
+// 	ci.sfi_size += sizeof(struct sfs_dir);	// file size up (one directory entry added)
+// 	disk_write( &ci, sd_cwd.sfd_ino );
+
+
+
+// 	/* new file datablock */
+	
+// 	int index=0;
+// 	int n;
+// 	char datablock[SFS_BLOCKSIZE];
+// 	int freeblockno, rfreeblockno;
+// 	u_int32_t location = 0;
+// 	u_int32_t realblock[SFS_DBPERIDB];
+// 	bzero(realblock, SFS_BLOCKSIZE);
+
+// 	custom_disk_open(path);
+
+// 	int total=0;
+// 	int len;
+// 	int totalfs = filesize;
+// 	// printf("total filesize: %d\n", totalfs);
+// 	while(total < totalfs){
+// 		if (index == SFS_NDIRECT){
+// 			// indirect ptr's realblock
+// 			rfreeblockno = take_free_block();
+// 			if (!rfreeblockno){	//no more free block
+// 				new_inode.sfi_size = total;
+// 				disk_write(&new_inode, cifbn);
+// 				error_message("cpin", local_path, -4);
+// 				return;
+// 			}
+// 			new_inode.sfi_indirect = rfreeblockno;
+// 		}
+
+// 		// find one free block
+// 		freeblockno = take_free_block();
+// 		if (!freeblockno){	//no more free block
+// 			new_inode.sfi_size = total;
+// 			disk_write(&new_inode, cifbn);
+// 			error_message("cpin", local_path, -4);
+// 			return;
+// 		}
+
+// 		if (index < SFS_NDIRECT)
+// 			new_inode.sfi_direct[index++] = freeblockno;	// link with i-node's direct ptr
+// 		else{
+// 			realblock[index - SFS_NDIRECT] = freeblockno;	// link with indirect ptr's realblock
+// 			index++;
+// 			disk_write(realblock, rfreeblockno);
+// 		}
+
+
+// 		bzero(datablock, SFS_BLOCKSIZE);
+// 		len = custom_disk_read2(datablock, location);
+// 		total += len;
+// 		// printf("read: %d,  total: %d, filesizeleft: %d\n", len, total, filesize);
+
+// 		// write into local one block
+// 		disk_write(datablock, freeblockno);
+// 		disk_write(&new_inode, cifbn);
+
+// 	}
+
+// 	custom_disk_close();
+
+// 	new_inode.sfi_size = total;
+// 	disk_write(&new_inode, cifbn);
+
+// }
+
+
+
 void sfs_cpin(const char* local_path, const char* path) 
 {
 	//errors
@@ -1368,6 +1589,15 @@ void sfs_cpin(const char* local_path, const char* path)
 	}
 
 
+	int ndpfbn;
+	if (!empty_dtre_found){
+		ndpfbn = take_free_block();
+		if (!ndpfbn){	// no more free block
+			error_message("cpin", local_path, -4);
+			return;
+		}
+	}
+
 
 	// clear loaded bitmap
 	bzero(BITMAP, bm_size);
@@ -1393,7 +1623,7 @@ void sfs_cpin(const char* local_path, const char* path)
 
 	fbn = take_free_block();	// find first free block, get free block number, and mark the bitmap
 	if (!fbn){	// no more free block
-		error_message("cpin", path, -4);
+		error_message("cpin", local_path, -4);
 		return;
 	}
 	u_int32_t cifbn = fbn;
@@ -1403,23 +1633,19 @@ void sfs_cpin(const char* local_path, const char* path)
 	if(!empty_dtre_found){
 		// new direct ptr -> new directory block allocate
 		struct sfs_dir new_dtrb[SFS_DENTRYPERBLOCK];
+		bzero(new_dtrb, SFS_BLOCKSIZE);
 		int i;
 		for(i=0; i<SFS_DENTRYPERBLOCK; i++){
 			new_dtrb[i].sfd_ino = SFS_NOINO;
 		}
 
-		fbn = take_free_block();
-		if (!fbn){	// no more free block
-			error_message("cpin", path, -4);
-			return;
-		}
 
 		new_dtrb[0].sfd_ino = cifbn;
 		bzero(new_dtrb[0].sfd_name, SFS_NAMELEN);
 		strncpy(new_dtrb[0].sfd_name, local_path, SFS_NAMELEN);
-		disk_write(new_dtrb, fbn);
+		disk_write(new_dtrb, ndpfbn);
 
-		ci.sfi_direct[empty_direct_ptr] = fbn;	// parent direct ptr update (for new directory block)
+		ci.sfi_direct[empty_direct_ptr] = ndpfbn;	// parent direct ptr update (for new directory block)
 	} else{	// found empty directory entry
 		tempdrte->sfd_ino = cifbn;
 		bzero(tempdrte->sfd_name, SFS_NAMELEN);
@@ -1457,7 +1683,7 @@ void sfs_cpin(const char* local_path, const char* path)
 			if (!rfreeblockno){	//no more free block
 				new_inode.sfi_size = total;
 				disk_write(&new_inode, cifbn);
-				error_message("cpin", path, -4);
+				error_message("cpin", local_path, -4);
 				return;
 			}
 			new_inode.sfi_indirect = rfreeblockno;
@@ -1468,7 +1694,7 @@ void sfs_cpin(const char* local_path, const char* path)
 		if (!freeblockno){	//no more free block
 			new_inode.sfi_size = total;
 			disk_write(&new_inode, cifbn);
-			error_message("cpin", path, -4);
+			error_message("cpin", local_path, -4);
 			return;
 		}
 
@@ -1498,6 +1724,12 @@ void sfs_cpin(const char* local_path, const char* path)
 	disk_write(&new_inode, cifbn);
 
 }
+
+
+
+
+
+
 
 void sfs_cpout(const char* local_path, const char* path) 
 {
