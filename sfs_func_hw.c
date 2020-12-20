@@ -662,9 +662,164 @@ void sfs_ls(const char* path)
 	}
 
 	// path not found
-	error_message("cd", path, -1);
+	error_message("ls", path, -1);
 	return;
 }
+
+// void sfs_mkdir(const char* org_path) 
+// {
+
+// 	int empty_dtre_found=0;
+// 	int empty_direct_ptr=0;
+
+// 	struct sfs_dir *modified_drtblock;
+// 	u_int32_t origin_drtblock_no;
+// 	u_int32_t fbn;
+
+// 	struct sfs_inode ci;
+// 	disk_read( &ci, sd_cwd.sfd_ino );
+
+// 	//for consistency
+// 	assert( ci.sfi_type == SFS_TYPE_DIR );
+
+
+// 	// check if the path already exists
+// 	// cwd inode direct ptr loop
+// 	int i;
+// 	struct sfs_dir *tempdrte;
+// 	for (i=0; i<SFS_NDIRECT; i++){
+// 		// printf("i: %d\n", i);
+// 		// printf("direct? : %d\n", ci.sfi_direct[i]);
+// 		// if direct ptr in use,
+// 		if (ci.sfi_direct[i]){
+// 			struct sfs_dir cdtrb[SFS_DENTRYPERBLOCK];
+// 			disk_read( cdtrb, ci.sfi_direct[i] );
+
+// 			// cwd directory entry loop
+// 			int j;
+// 			for (j=0; j<SFS_DENTRYPERBLOCK; j++){
+// 				// printf("j: %d\n", j);
+// 				// printf("dirname: %s\n", cdtrb[j].sfd_name);
+// 				if (!empty_dtre_found && (cdtrb[j].sfd_ino == SFS_NOINO)){	// fisrt empty directory entry found
+// 					empty_dtre_found = 1;
+// 					tempdrte = &cdtrb[j];
+// 					modified_drtblock = cdtrb;
+// 					origin_drtblock_no = ci.sfi_direct[i];
+// 				}
+
+// 				// if directory entry in use, and path already exists
+// 				if ( (cdtrb[j].sfd_ino != SFS_NOINO) && (strcmp(cdtrb[j].sfd_name, org_path) == 0) ){
+// 					error_message("mkdir", org_path, -6);
+// 					return;
+// 				}
+// 			}
+// 			if (empty_dtre_found)
+// 				break;
+
+// 		} else {
+// 			empty_direct_ptr = i;
+// 			break;
+// 		}
+// 	}
+
+
+// 	if(!empty_dtre_found && !empty_direct_ptr){	// directory full
+// 		error_message("mkdir", org_path, -3);
+// 		return;
+// 	}
+
+// 	// clear loaded bitmap
+// 	bzero(BITMAP, bm_size);
+// 	// load bitmap
+// 	for (i=0; i<SFS_BITBLOCKS(spb.sp_nblocks); i++){
+// 		disk_read( &BITMAP[i*SFS_BLOCKSIZE], i+2);
+// 	}
+
+
+// 	/* for child direcory i-node*/
+
+// 	// path not exists
+// 	struct sfs_inode new_inode;
+// 	bzero(&new_inode,SFS_BLOCKSIZE); // initalize sfi_direct[] and sfi_indirect
+// 	new_inode.sfi_size = sizeof(struct sfs_dir) * 2;
+// 	new_inode.sfi_type = SFS_TYPE_DIR;
+
+// 	// print_bitmap();
+
+// 	fbn = take_free_block();	// find first free block, get free block number, and mark the bitmap
+// 	if (!fbn){	// no more free block
+// 		error_message("mkdir", org_path, -4);
+// 		return;
+// 	}
+// 	u_int32_t cifbn = fbn;
+
+
+// 	/* for child directory directory block */
+
+// 	struct sfs_dir new_chdtrb[SFS_DENTRYPERBLOCK];
+// 	for(i=0; i<SFS_DENTRYPERBLOCK; i++){
+// 		new_chdtrb[i].sfd_ino = SFS_NOINO;
+// 	}
+
+// 	fbn = take_free_block();
+// 	if (!fbn){	// no more free block
+// 		error_message("mkdir", org_path, -4);
+// 		return;
+// 	}
+// 	u_int32_t cdfbn = fbn;
+
+// 	bzero(new_chdtrb[0].sfd_name, SFS_NAMELEN);
+// 	bzero(new_chdtrb[1].sfd_name, SFS_NAMELEN);
+// 	strncpy(new_chdtrb[0].sfd_name, ".", SFS_NAMELEN);
+// 	strncpy(new_chdtrb[1].sfd_name, "..", SFS_NAMELEN);
+// 	new_chdtrb[0].sfd_ino = cifbn;
+// 	new_chdtrb[1].sfd_ino = sd_cwd.sfd_ino;
+// 	new_inode.sfi_direct[0] = cdfbn;
+
+
+
+// 	/* for parent directory block (current or new) */
+
+// 	if(!empty_dtre_found){
+// 		// new direct ptr -> new directory block allocate
+// 		struct sfs_dir new_dtrb[SFS_DENTRYPERBLOCK];
+// 		int i;
+// 		for(i=0; i<SFS_DENTRYPERBLOCK; i++){
+// 			new_dtrb[i].sfd_ino = SFS_NOINO;
+// 		}
+
+// 		fbn = take_free_block();
+// 		if (!fbn){	// no more free block
+// 			error_message("mkdir", org_path, -4);
+// 			return;
+// 		}
+
+// 		new_dtrb[0].sfd_ino = cifbn;
+// 		bzero(new_dtrb[0].sfd_name, SFS_NAMELEN);
+// 		strncpy(new_dtrb[0].sfd_name, org_path, SFS_NAMELEN);
+// 		disk_write(new_dtrb, fbn);
+
+// 		ci.sfi_direct[empty_direct_ptr] = fbn;	// parent direct ptr update (for new directory block)
+// 	} else{	// found empty directory entry
+// 		tempdrte->sfd_ino = cifbn;
+// 		bzero(tempdrte->sfd_name, SFS_NAMELEN);
+// 		strncpy(tempdrte->sfd_name, org_path, SFS_NAMELEN);
+// 		disk_write(modified_drtblock, origin_drtblock_no);
+// 	}
+
+// 	// child directory directory block write back
+// 	disk_write(new_chdtrb, cdfbn);
+// 	// child i-node write back
+// 	disk_write(&new_inode, cifbn);
+
+// 	/* for parent i-node */
+
+// 	ci.sfi_size += sizeof(struct sfs_dir);	// file size up (one directory entry added)
+// 	disk_write( &ci, sd_cwd.sfd_ino );
+
+// }
+
+
 
 void sfs_mkdir(const char* org_path) 
 {
@@ -728,6 +883,15 @@ void sfs_mkdir(const char* org_path)
 		return;
 	}
 
+	int ndpfbn;
+	if(!empty_dtre_found){
+		ndpfbn = take_free_block();
+		if (!ndpfbn){	// no more free block
+			error_message("mkdir", org_path, -4);
+			return;
+		}
+	}
+
 	// clear loaded bitmap
 	bzero(BITMAP, bm_size);
 	// load bitmap
@@ -788,18 +952,12 @@ void sfs_mkdir(const char* org_path)
 			new_dtrb[i].sfd_ino = SFS_NOINO;
 		}
 
-		fbn = take_free_block();
-		if (!fbn){	// no more free block
-			error_message("mkdir", org_path, -4);
-			return;
-		}
-
 		new_dtrb[0].sfd_ino = cifbn;
 		bzero(new_dtrb[0].sfd_name, SFS_NAMELEN);
 		strncpy(new_dtrb[0].sfd_name, org_path, SFS_NAMELEN);
-		disk_write(new_dtrb, fbn);
+		disk_write(new_dtrb, ndpfbn);
 
-		ci.sfi_direct[empty_direct_ptr] = fbn;	// parent direct ptr update (for new directory block)
+		ci.sfi_direct[empty_direct_ptr] = ndpfbn;	// parent direct ptr update (for new directory block)
 	} else{	// found empty directory entry
 		tempdrte->sfd_ino = cifbn;
 		bzero(tempdrte->sfd_name, SFS_NAMELEN);
@@ -818,6 +976,8 @@ void sfs_mkdir(const char* org_path)
 	disk_write( &ci, sd_cwd.sfd_ino );
 
 }
+
+
 
 void sfs_rmdir(const char* org_path) 
 {
@@ -1108,7 +1268,7 @@ void sfs_rm(const char* path)
 						return;
 
 					} else{	// if not a file
-						error_message("rm", path, -10);
+						error_message("rm", path, -9);
 						return;
 					}
 				}
@@ -1118,7 +1278,7 @@ void sfs_rm(const char* path)
 	}
 
 	// path not found
-	error_message("cd", path, -1);
+	error_message("rm", path, -1);
 	return;
 }
 
